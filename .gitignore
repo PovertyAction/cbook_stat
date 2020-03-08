@@ -1,0 +1,9 @@
+# Save sublime workspace files
+cbook2.sublime-project
+cbook2.sublime-workspace
+
+# Other folders
+_archive/
+
+# Working documents
+todo.txt
