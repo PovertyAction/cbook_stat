@@ -1,13 +1,13 @@
-*! version 0.9.0 Michael Rosenbaum - 08mar2020
+*! version 0.9.1 Michael Rosenbaum - 07aug2020
 
 program define cbook_stat
 
 	*Syntax and version set-up
 	version 15.1
-	syntax [varlist] using/ [if] [in], [replace] [ipums(varname)]
+	syntax [varlist] using/ [if] [in], [replace] [COMParison(varname)]
 
 	*marksample
-	marksample touse
+	marksample touse, novarlist
 
 	cap putexcel close
 
@@ -29,15 +29,14 @@ program define cbook_stat
 	* Produce data
 	***********************************
 	*Produce data
-	cbook_2 `varlist'
+	cbook_2 `varlist' `if' `in'
 	mat A_c = e(sumstats)
-	cbook_lab `varlist'
+	cbook_lab `varlist' `if' `in'
 	mat A_l = e(sumstats2)
 
-
-	export_cbook `varlist' using "`using'", replace
+	export_cbook 	`varlist' using "`using'", replace
 	export_cbooklab `varlist' using "`using'" 
-	if "`ipums'" != "" export_cbookipums `varlist' using "`using'", ipums(`ipums')
+	if "`comparison'" != "" export_cbookcomp `varlist' using "`using'", comparison(`comparison')
 
 end
 // end program
@@ -49,19 +48,24 @@ end
 *******************************************************************************
 *A. cbook (save summary stats)
 *B. cbook_lab (save labeling file)
-*C. cbook_ipums (save longitudinal variable check)
+*C. cbook_comparison (save longitudinal variable check)
 *D. get_qtile (gets quintile for cbook)
 *E. export_cbook (export sheets)
+
 
 **A. cbook
 program cbook_2, eclass
 
-	syntax varlist
+	syntax varlist [if] [in]
+
+	*Mar sample and names
+	marksample touse, novarlist 
+	tempname A i vallab
 
 	*Save matrix
-	tempname A i vallab
 	mat `A' = J(`: word count `varlist'', 10, .)
 
+	* Loop through varlist ot summarize
 	loc `i' = 1 // init at start of matrix
 	foreach var of local varlist {
 		
@@ -77,7 +81,8 @@ program cbook_2, eclass
 			continue 
 		}
 
-		qui su `var' `if' `in', d
+		* Summarize variable
+		qui su `var' if `touse', d
 		
 		mat `A'[``i'',1] = `r(mean)'
 		mat `A'[``i'',2] = `r(sd)'
@@ -89,7 +94,7 @@ program cbook_2, eclass
 		mat `A'[``i'',9] = `r(p95)'
 		mat `A'[``i'',10] = `r(max)'
 
-		qui count if mi(`var') 
+		qui count if mi(`var') & `touse' 
 		mat `A'[``i'',3] = `r(N)'
 		
 		*Advance counter 
@@ -102,58 +107,63 @@ program cbook_2, eclass
 
 end
 
+
 **B. cbook_lab
 program cbook_lab, eclass
 
-	syntax varlist
+	syntax varlist [if] [in]
 
-	tempname A i lablist vallab nlabs denom
+	*Mark sample and tempnames
+	marksample touse, novarlist
+	tempname A i lablist vallab values nlabs denom
 
-	loc `lablist' // init empty
-	loc `nlabs' = 0 // init at 0 so always has value
+	*Loop through labels
+	loc `lablist' 																// init empty
+	loc `nlabs' = 0 															// init at 0 so always has value
 	foreach var of local varlist {
 		loc `vallab' : value label `var'
 		if "``vallab''" == "" continue 
-		if "``vallab''" == "noyes" continue // no need to confirm yes no vars
+		if "``vallab''" == "noyes" continue 									// no need to confirm yes no vars
 
 		*Save information if labeled
 		loc `lablist' ``lablist'' `var'
 		qui lab list ``vallab''
-		loc `nlabs' = ``nlabs'' + `r(k)' + 1 // add in each column
+		loc `nlabs' = ``nlabs'' + `r(k)' + 1 									// add in each column
 	} 
 	
 	*Start matrix in n+1 matrices
 	mat `A' = J(``nlabs'', 5, .)
 
 	*Save values
-	loc `vallab' // init empty
 	loc `i' = 1
 	foreach var of local `lablist' {
-		loc `vallab' : value label `var'
-		
-		qui count if mi(`var')
+			
+		* Count missing 
+		qui count if mi(`var') & `touse'
 		mat `A'[``i'', 1] = `r(N)'
-		loc ++`i' // advance past name
+		loc ++`i' 																// advance past name
 		
-		*Set denom
-		qui count if !mi(`var')
+		*Set denom for valued 
+		qui count if !mi(`var') & `touse'
 		loc denom `r(N)'
 
-		qui lab list ``vallab''
-		forval j = `r(min)'(1)`r(max)' {
+		* Collect labels
+		qui levelsof `var', loc(`values') 										// collect unique non-missing values
+		foreach j of local `values' {
 			
+			*Create matrix
 			mat `A'[``i'', 2] = `j'
 			
-			cap confirm numeric var `var'
-			if !_rc qui count if `var' == `j'
-			else qui count if `var' == "`j'"
+			* Coount values 
+			qui count if `var' == `j' & `touse'
 
+			* Set matrix summaries
 			mat `A'[``i'', 4] = `r(N)' 
 			mat `A'[``i'', 5] = `r(N)'/`denom'
 
-			loc ++`i'
+			loc ++`i' 															// advance rows
 		}
-		// forval j = `r(min)'(1)`r(max)'
+		// foreach j of local `vallab'
 
 	}
 	// foreach var of local `lablist'
@@ -162,30 +172,32 @@ program cbook_lab, eclass
 
 end
 
+
 **C. Export cbook
 program export_cbooklab 
 
 	syntax varlist using/ 
+ 
+ 	*Reserve names
+ 	tempname xlcmd i lablist vallab vlab values
 
 	*Putexcel set 
 	qui putexcel set "`using'", sheet("Labels") modify open 
 	putexcel D2 = matrix(A_l), nformat("#0")
 
 	*Place titles
-	putexcel A1 = "Variable Name" ///
-			 B1 = "Variable Label" ///
-			 C1 = "Label Name" ///
-			 D1 = "Missing" ///
-			 E1 = "Value" /// 
-			 F1 = "Value Name" ///
-			 G1 = "Count" ///
-			 H1 = "Percentage", ///
+	putexcel A1 = "Variable Name" 												///
+			 B1 = "Variable Label" 												///
+			 C1 = "Label Name" 													///
+			 D1 = "Missing" 													///
+			 E1 = "Value" 														/// 
+			 F1 = "Value Name" 													///
+			 G1 = "Count" 														///
+			 H1 = "Percentage", 												///
 	bold hcenter border(bottom)
  
- 	tempname xlcmd i lablist vallab vlab 
 
 	*Save values
-
 	loc `lablist' // init empty
 	foreach var of local varlist {
 		loc `vlab' : value label `var'
@@ -202,16 +214,16 @@ program export_cbooklab
 	loc `i' = 2
 	foreach var of local `lablist' {
 
-		loc `vlab' : variable label `var'
-		loc `vallab' : value label `var'	
+		loc `vlab' 		: variable label `var'
+		loc `vallab' 	: value label `var'	
 
 		loc `xlcmd' ``xlcmd'' A``i'' = `"`var'"'
 		loc `xlcmd' ``xlcmd'' B``i'' = `"``vlab''"'
 		loc `xlcmd' ``xlcmd'' C``i'' = `"``vallab''"'
 		loc ++`i'
 	
-		qui lab list ``vallab''
-		forval j = `r(min)'(1)`r(max)' {
+		qui levelsof `var', loc(`values')
+		foreach j of local `values' {
 			loc `xlcmd' ``xlcmd'' F``i'' = `"`: label ``vallab'' `j''"'
 			loc ++`i'
 		}
@@ -290,8 +302,9 @@ program export_cbook
 	loc `i' = 3 // starts at 3
 	foreach var of local varlist {
 
-		loc `vlab' : variable label `var'
-		loc `vallab' : value label `var'
+		* Collect names 
+		loc `vlab' 		: variable label `var'
+		loc `vallab' 	: value label `var'
 
 
 		loc `type' // init empty
@@ -332,15 +345,19 @@ program export_cbook
 end
 
 
-program export_cbookipums
+**E. Export codebook comparison
+program export_cbookcomp
 
-	syntax varlist using/, ipums(varname)
+	syntax varlist using/ [if] [in], comparison(varname)
+
+	*Mark sample and name space
+	marksample touse, novarlist
+	tempname i j xlcmd levelslist vlab di_lvl
 
 	*Putexcel set 
 	qui putexcel set "`using'", sheet("Comparison") modify open
 
-	tempname i j xlcmd levelslist vlab di_lvl
-	qui levelsof `ipums'
+	qui levelsof `comparison'
 	loc `levelslist' `r(levels)'
 
 	loc `i' = 1 // init at start
@@ -376,9 +393,12 @@ program export_cbookipums
 		forval level = 1(1)`: word count `"``levelslist''"'' {
 
 	/* " // subime parsing fix */
-			qui count if !mi(`var') & (`ipums' == `"`: word `level' of `"``levelslist''"''"' )
+			qui count if !mi(`var') & `touse' 									///
+				& (`comparison' == `"`: word `level' of `"``levelslist''"''"')
 	/* " // subime parsing fix */
-			if `r(N)' != 0 loc `xlcmd' ``xlcmd'' `: word ``j'' of `c(ALPHA)''``i'' = "X"
+			if `r(N)' != 0 {
+				loc `xlcmd' ``xlcmd'' `: word ``j'' of `c(ALPHA)''``i'' = "X"
+			}
 			loc ++`j'
 		}
 		// end foreach level of local `levelslist'
@@ -403,3 +423,6 @@ program export_cbookipums
 	mata:	b.close_book()
 
 end
+
+
+**EOF**
