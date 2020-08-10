@@ -1,16 +1,15 @@
-v 0.9
+v 3
 d 'CBOOK_STAT': IPA Stata high-frequency check commands
 d These commands perform common data quality checks useful
 d during the data collection and cleaning phases of field
 d research.
 d
-d KW: data description
-d
 d Requires: Stata version 15.2
 d
-d Distribution-Date: 20190308
+d Distribution-Date: 20200810
 d
 d Authors: Michael Rosenbaum, Innovations for Poverty Action
 d Support: researchsupport@poverty-action.org
 
 f cbook_stat.ado
+f cbook_stat.sthlp
