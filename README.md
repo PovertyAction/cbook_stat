@@ -11,5 +11,5 @@ ipacheck is a Stata package that creates a codebook with up to three features:
 
 ```Stata
 * ipacheck may be installed directly from GitHub
-net install cbook_comp, from("https://raw.githubusercontent.com/MRosenbaum/master/") replace 
+net install cbook_stat, from("https://raw.githubusercontent.com/PovertyAction/cbook_stat/master/") replace 
 ```
