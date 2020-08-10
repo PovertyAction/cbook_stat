@@ -1,5 +1,13 @@
 *! version 0.9.1 Michael Rosenbaum - 07aug2020
 
+/*
+	To-do:
+		-Union of labels and not determine columns in label sheet
+			-Option
+		-Options for including various stats
+		-Section in survey/ordering
+*/
+
 program define cbook_stat
 
 	*Syntax and version set-up
@@ -63,7 +71,7 @@ program cbook_2, eclass
 	tempname A i vallab
 
 	*Save matrix
-	mat `A' = J(`: word count `varlist'', 10, .)
+	mat `A' = J(`: word count `varlist'', 11, .)
 
 	* Loop through varlist ot summarize
 	loc `i' = 1 // init at start of matrix
@@ -84,18 +92,22 @@ program cbook_2, eclass
 		* Summarize variable
 		qui su `var' if `touse', d
 		
+		* Save quantities of interest
 		mat `A'[``i'',1] = `r(mean)'
 		mat `A'[``i'',2] = `r(sd)'
-		mat `A'[``i'',4] = `r(min)'
-		mat `A'[``i'',5] = `r(p5)'
-		mat `A'[``i'',6] = `r(p25)'
-		mat `A'[``i'',7] = `r(p50)'
-		mat `A'[``i'',8] = `r(p75)'
-		mat `A'[``i'',9] = `r(p95)'
-		mat `A'[``i'',10] = `r(max)'
+		mat `A'[``i'',5] = `r(min)'
+		mat `A'[``i'',6] = `r(p5)'
+		mat `A'[``i'',7] = `r(p25)'
+		mat `A'[``i'',8] = `r(p50)'
+		mat `A'[``i'',9] = `r(p75)'
+		mat `A'[``i'',10] = `r(p95)'
+		mat `A'[``i'',11] = `r(max)'
 
-		qui count if mi(`var') & `touse' 
+		* Save missing and non-missing counts
+		qui count if !mi(`var') & `touse'
 		mat `A'[``i'',3] = `r(N)'
+		qui count if mi(`var') & `touse' 
+		mat `A'[``i'',4] = `r(N)'
 		
 		*Advance counter 
 		loc ++`i'
@@ -132,15 +144,17 @@ program cbook_lab, eclass
 	} 
 	
 	*Start matrix in n+1 matrices
-	mat `A' = J(``nlabs'', 5, .)
+	mat `A' = J(``nlabs'', 6, .)
 
 	*Save values
 	loc `i' = 1
 	foreach var of local `lablist' {
 			
 		* Count missing 
-		qui count if mi(`var') & `touse'
+		qui count if !mi(`var') & `touse'
 		mat `A'[``i'', 1] = `r(N)'
+		qui count if mi(`var') & `touse'
+		mat `A'[``i'', 2] = `r(N)'
 		loc ++`i' 																// advance past name
 		
 		*Set denom for valued 
@@ -152,14 +166,14 @@ program cbook_lab, eclass
 		foreach j of local `values' {
 			
 			*Create matrix
-			mat `A'[``i'', 2] = `j'
+			mat `A'[``i'', 3] = `j'
 			
 			* Coount values 
 			qui count if `var' == `j' & `touse'
 
 			* Set matrix summaries
-			mat `A'[``i'', 4] = `r(N)' 
-			mat `A'[``i'', 5] = `r(N)'/`denom'
+			mat `A'[``i'', 5] = `r(N)' 
+			mat `A'[``i'', 6] = `r(N)'/`denom'
 
 			loc ++`i' 															// advance rows
 		}
@@ -189,11 +203,12 @@ program export_cbooklab
 	putexcel A1 = "Variable Name" 												///
 			 B1 = "Variable Label" 												///
 			 C1 = "Label Name" 													///
-			 D1 = "Missing" 													///
-			 E1 = "Value" 														/// 
-			 F1 = "Value Name" 													///
-			 G1 = "Count" 														///
-			 H1 = "Percentage", 												///
+			 D1 = "Non-missing"													///
+			 E1 = "Missing" 													///
+			 F1 = "Value" 														/// 
+			 G1 = "Value Name" 													///
+			 H1 = "Count" 														///
+			 I1 = "Percentage", 												///
 	bold hcenter border(bottom)
  
 
@@ -224,7 +239,7 @@ program export_cbooklab
 	
 		qui levelsof `var', loc(`values')
 		foreach j of local `values' {
-			loc `xlcmd' ``xlcmd'' F``i'' = `"`: label ``vallab'' `j''"'
+			loc `xlcmd' ``xlcmd'' G``i'' = `"`: label ``vallab'' `j''"'
 			loc ++`i'
 		}
 		// end forval j = `r(min)'(1)`r(max)'
@@ -232,7 +247,7 @@ program export_cbooklab
 	}
 	// end foreach var of local `lablist'
 
-	putexcel H3:H``i'', nformat("#0.0%")
+	putexcel I3:I``i'', nformat("#0.0%")
 
 	*Run command
 	``xlcmd''
@@ -244,10 +259,10 @@ program export_cbooklab
 	mata: 	b.set_sheet("Labels")
 	mata:   b.set_column_width(1, 1, 29)
 	mata: 	b.set_column_width(2, 2, 60)
-	mata:   b.set_column_width(3, 3, 20)
-	mata:	b.set_column_width(4, 5, 10)
-	mata: 	b.set_column_width(6, 6, 30)
-	mata:	b.set_column_width(7, 8, 10)
+	mata:   b.set_column_width(3, 4, 20)
+	mata:	b.set_column_width(5, 6, 10)
+	mata: 	b.set_column_width(7, 7, 30)
+	mata:	b.set_column_width(8, 9, 10)
 	mata:	b.close_book()
 
 	*Close putexcel environment
@@ -266,34 +281,36 @@ program export_cbook
 	putexcel E3 = matrix(A_c), nformat("#0.00")
 
 	*Place titles
-	putexcel A1 = "Variable Name" ///
-			 B1 = "Variable Label" ///
-			 C1 = "Type" ///
-			 D1 = "Encoded" /// 
-			 E1 = "Mean" ///
-			 F1 = "SD" ///
-			 G1 = "# Missing" ///
-			 H1 = "Minimum" ///
-			 I1 = "Percentiles" ///
-			 N1 = "Maximum", ///
+	putexcel A1 = "Variable Name" 												///
+			 B1 = "Variable Label" 												///
+			 C1 = "Type" 														///
+			 D1 = "Encoded" 													/// 
+			 E1 = "Mean" 														///
+			 F1 = "SD" 															///
+			 G1 = "Non-missing" 												///
+			 H1 = "Missing" 													///
+			 I1 = "Minimum" 													///
+			 J1 = "Percentiles" 												///
+			 O1 = "Maximum", 													///
 	bold hcenter
-	putexcel I1:M1, merge
+	putexcel J1:N1, merge
 		
 	*Place subtitles
-	putexcel A2 = "" ///
-			B2 = "" ///
-			C2 = "" /// 
-			D2 = "" ///
-			E2 = "" /// 
-			F2 = "" ///
-			G2 = "" ///
-			H2 = "" ///
-			I2 = "5"  /// 
-			J2 = "25" /// 
-			K2 = "50" ///
-			L2 = "75" ///
-			M2 = "95" ///
-			N2 = "", ///
+	putexcel A2 = "" 															///
+			B2 = "" 															///
+			C2 = "" 															/// 
+			D2 = "" 															///
+			E2 = "" 															/// 
+			F2 = "" 															///
+			G2 = "" 															///
+			H2 = "" 															///
+			I2 = "" 															///
+			J2 = "5"  															/// 
+			K2 = "25" 															/// 
+			L2 = "50" 															///
+			M2 = "75" 															///
+			N2 = "95" 															///
+			O2 = "", 															///
 	border(bottom) 
 
 	*Save metadata
@@ -324,7 +341,7 @@ program export_cbook
 	}
 
 	*Format missings correctly
-	putexcel G3:G``i'', nformat("0")
+	putexcel G3:H``i'', nformat("0")
 
 	*Run command
 	``xlcmd''
@@ -336,7 +353,7 @@ program export_cbook
 	mata: 	b.set_sheet("Variables")
 	mata:   b.set_column_width(1, 1, 29)
 	mata: 	b.set_column_width(2, 2, 40)
-	mata:	b.set_column_width(3, 14, 10)
+	mata:	b.set_column_width(3, 15, 10)
 	mata:	b.close_book()
 
 	*Close putexcel environment
