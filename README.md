@@ -5,7 +5,7 @@ ipacheck is a Stata package that creates a codebook with up to three features:
 
 1. A descriptive list of variables with metadata about variable information and summary statistics. 
 2. A list of encoded categorical variables with response rates.
-3. A comparison of variable importance to 
+3. A comparison of variable missingness by any variable in the dataset.
 
 ## Installation
 
